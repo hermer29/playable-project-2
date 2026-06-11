@@ -7,6 +7,16 @@ import GridView from './view/GridView';
 
 const { ccclass, executeInEditMode, property } = cc._decorator;
 const GRID_GIZMO_NODE_NAME = '__GridSpawnerGizmo';
+const BOOSTERS_NODE_NAME = 'frame_boosters';
+const BOOSTER_SLOT_NODE_NAME = 'frame_booster';
+const BOOSTER_AMOUNT_LABEL_NODE_NAME = 'label_booster_amount';
+const DEBUG_BOOSTER_GRANT_AMOUNT = 1;
+
+enum SelectedBooster {
+    None = 0,
+    Bomb = 1,
+    Teleport = 2,
+}
 
 @ccclass
 @executeInEditMode
@@ -80,6 +90,18 @@ export default class GridSpawner extends cc.Component {
         tooltip: 'Label that shows remaining moves.',
     })
     public movesLabel: cc.Label = null;
+
+    @property({
+        type: cc.Node,
+        tooltip: 'Optional button node that selects the bomb booster.',
+    })
+    public bombBoosterButton: cc.Node = null;
+
+    @property({
+        type: cc.Node,
+        tooltip: 'Optional button node that selects the teleport booster.',
+    })
+    public teleportBoosterButton: cc.Node = null;
 
     @property({
         tooltip: 'Score required to win.',
@@ -177,6 +199,14 @@ export default class GridSpawner extends cc.Component {
     private remainingMoves = 0;
     private isGameFinished = false;
     private isPlayingVictoryAnimation = false;
+    private selectedBooster = SelectedBooster.None;
+    private teleportFirstPosition: GridPosition = null;
+    private bombBoosterTouchTarget: cc.Node = null;
+    private teleportBoosterTouchTarget: cc.Node = null;
+    private bombBoosterAmountLabel: cc.Label = null;
+    private teleportBoosterAmountLabel: cc.Label = null;
+    private bombBoosterAmount = 3;
+    private teleportBoosterAmount = 3;
 
     protected onEnable(): void {
         this.drawGridGizmo();
@@ -184,6 +214,8 @@ export default class GridSpawner extends cc.Component {
 
     protected onDisable(): void {
         this.unschedule(this.restartAfterVictory);
+        this.unbindDebugBoosterKey();
+        this.unbindBoosterButtons();
         this.isPlayingVictoryAnimation = false;
         this.clearGridGizmo();
     }
@@ -198,6 +230,8 @@ export default class GridSpawner extends cc.Component {
         }
 
         this.bindHudLabels();
+        this.bindBoosterButtons();
+        this.bindDebugBoosterKey();
         this.currentScore = 0;
         this.remainingMoves = Math.max(1, Math.floor(this.maxMoves));
         this.updateHud();
@@ -262,25 +296,48 @@ export default class GridSpawner extends cc.Component {
         this.isAnimating = false;
         this.isGameFinished = false;
         this.isPlayingVictoryAnimation = false;
+        this.clearSelectedBooster();
     }
 
     public activateBombBooster(row: number, column: number): void {
-        if (!this.engine || this.isAnimating || this.isGameFinished) {
+        if (!this.engine || this.isAnimating || this.isGameFinished || this.bombBoosterAmount <= 0) {
             return;
         }
 
-        this.runTurn(this.engine.activateBombBooster(gridPosition(row, column), this.bombBoosterRadius), true);
+        this.runBoosterTurn(
+            this.engine.activateBombBooster(gridPosition(row, column), this.bombBoosterRadius),
+            SelectedBooster.Bomb,
+        );
+    }
+
+    public selectBombBooster(): void {
+        this.setSelectedBooster(
+            this.selectedBooster === SelectedBooster.Bomb
+                ? SelectedBooster.None
+                : SelectedBooster.Bomb,
+        );
+    }
+
+    public selectTeleportBooster(): void {
+        this.setSelectedBooster(
+            this.selectedBooster === SelectedBooster.Teleport
+                ? SelectedBooster.None
+                : SelectedBooster.Teleport,
+        );
     }
 
     public teleportSwap(fromRow: number, fromColumn: number, toRow: number, toColumn: number): void {
-        if (!this.engine || this.isAnimating || this.isGameFinished) {
+        if (!this.engine || this.isAnimating || this.isGameFinished || this.teleportBoosterAmount <= 0) {
             return;
         }
 
-        this.runTurn(this.engine.teleportSwap(
-            gridPosition(fromRow, fromColumn),
-            gridPosition(toRow, toColumn),
-        ), true);
+        this.runBoosterTurn(
+            this.engine.teleportSwap(
+                gridPosition(fromRow, fromColumn),
+                gridPosition(toRow, toColumn),
+            ),
+            SelectedBooster.Teleport,
+        );
     }
 
     private handleBlockClick(position: GridPosition): void {
@@ -288,7 +345,51 @@ export default class GridSpawner extends cc.Component {
             return;
         }
 
+        if (this.selectedBooster === SelectedBooster.Bomb) {
+            this.clearSelectedBooster();
+            this.runBoosterTurn(
+                this.engine.activateBombBooster(position, this.bombBoosterRadius),
+                SelectedBooster.Bomb,
+            );
+            return;
+        }
+
+        if (this.selectedBooster === SelectedBooster.Teleport) {
+            this.handleTeleportBoosterClick(position);
+            return;
+        }
+
         this.runTurn(this.engine.activate(position), true);
+    }
+
+    private handleTeleportBoosterClick(position: GridPosition): void {
+        if (!this.teleportFirstPosition) {
+            this.teleportFirstPosition = {
+                row: position.row,
+                column: position.column,
+            };
+
+            if (this.gridView) {
+                this.gridView.setSelectedTile(this.teleportFirstPosition);
+            }
+
+            return;
+        }
+
+        if (this.teleportFirstPosition.row === position.row
+            && this.teleportFirstPosition.column === position.column) {
+            this.teleportFirstPosition = null;
+
+            if (this.gridView) {
+                this.gridView.setSelectedTile(null);
+            }
+
+            return;
+        }
+
+        const firstPosition = this.teleportFirstPosition;
+        this.clearSelectedBooster();
+        this.runBoosterTurn(this.engine.teleportSwap(firstPosition, position), SelectedBooster.Teleport);
     }
 
     private runTurn(result: GridTurnResult, consumeMove: boolean): void {
@@ -300,23 +401,33 @@ export default class GridSpawner extends cc.Component {
         this.isAnimating = true;
         this.gridView.setInputEnabled(false);
         this.gridView.applyActions(result.actions).then(() => {
-            this.isAnimating = false;
-
-            if (this.gridView && !this.isGameFinished && !result.gameOver) {
-                this.gridView.setInputEnabled(true);
-            } else if (this.isVictoryReached()) {
-                this.playVictoryAndRestart();
-            }
+            this.completeTurn(result);
         }).catch((error) => {
             cc.error('[GridSpawner] Failed to apply grid actions.', error);
-            this.isAnimating = false;
-
-            if (this.gridView && !this.isGameFinished && !result.gameOver) {
-                this.gridView.setInputEnabled(true);
-            } else if (this.isVictoryReached()) {
-                this.playVictoryAndRestart();
-            }
+            this.completeTurn(result);
         });
+    }
+
+    private runBoosterTurn(result: GridTurnResult, booster: SelectedBooster): void {
+        if (!result.changed) {
+            this.updateBoosterButtons();
+            return;
+        }
+
+        this.consumeBooster(booster);
+        this.runTurn(result, false);
+    }
+
+    private completeTurn(result: GridTurnResult): void {
+        this.isAnimating = false;
+
+        if (this.gridView && !this.isGameFinished && !result.gameOver) {
+            this.gridView.setInputEnabled(true);
+        } else if (this.isVictoryReached()) {
+            this.playVictoryAndRestart();
+        } else if (this.isGameFinished || result.gameOver) {
+            this.scheduleRestartAfterGameEnd();
+        }
     }
 
     private applyTurnStats(result: GridTurnResult, consumeMove: boolean): void {
@@ -335,6 +446,64 @@ export default class GridSpawner extends cc.Component {
         }
 
         this.updateHud();
+    }
+
+    private setSelectedBooster(booster: SelectedBooster): void {
+        if (this.isAnimating || this.isGameFinished) {
+            return;
+        }
+
+        if (!this.hasBoosterAmount(booster)) {
+            this.clearSelectedBooster();
+            return;
+        }
+
+        this.selectedBooster = booster;
+        this.teleportFirstPosition = null;
+
+        if (this.gridView) {
+            this.gridView.setSelectedTile(null);
+        }
+
+        this.updateBoosterButtons();
+    }
+
+    private hasBoosterAmount(booster: SelectedBooster): boolean {
+        switch (booster) {
+            case SelectedBooster.Bomb:
+                return this.bombBoosterAmount > 0;
+
+            case SelectedBooster.Teleport:
+                return this.teleportBoosterAmount > 0;
+
+            default:
+                return true;
+        }
+    }
+
+    private consumeBooster(booster: SelectedBooster): void {
+        switch (booster) {
+            case SelectedBooster.Bomb:
+                this.bombBoosterAmount = Math.max(0, this.bombBoosterAmount - 1);
+                break;
+
+            case SelectedBooster.Teleport:
+                this.teleportBoosterAmount = Math.max(0, this.teleportBoosterAmount - 1);
+                break;
+        }
+
+        this.updateBoosterButtons();
+    }
+
+    private clearSelectedBooster(): void {
+        this.selectedBooster = SelectedBooster.None;
+        this.teleportFirstPosition = null;
+
+        if (this.gridView) {
+            this.gridView.setSelectedTile(null);
+        }
+
+        this.updateBoosterButtons();
     }
 
     private countRemovedBlocks(result: GridTurnResult): number {
@@ -361,19 +530,19 @@ export default class GridSpawner extends cc.Component {
         this.isPlayingVictoryAnimation = true;
 
         if (!this.gridView) {
-            this.scheduleRestartAfterVictory();
+            this.scheduleRestartAfterGameEnd();
             return;
         }
 
         this.gridView.animateVictoryScatter().then(() => {
-            this.scheduleRestartAfterVictory();
+            this.scheduleRestartAfterGameEnd();
         }).catch((error) => {
             cc.error('[GridSpawner] Failed to play victory animation.', error);
-            this.scheduleRestartAfterVictory();
+            this.scheduleRestartAfterGameEnd();
         });
     }
 
-    private scheduleRestartAfterVictory(): void {
+    private scheduleRestartAfterGameEnd(): void {
         this.unschedule(this.restartAfterVictory);
         this.scheduleOnce(this.restartAfterVictory, Math.max(0, this.victoryReplayDelay));
     }
@@ -407,6 +576,35 @@ export default class GridSpawner extends cc.Component {
         }
     }
 
+    private bindDebugBoosterKey(): void {
+        cc.systemEvent.off(cc.SystemEvent.EventType.KEY_DOWN, this.handleKeyDown, this);
+        cc.systemEvent.on(cc.SystemEvent.EventType.KEY_DOWN, this.handleKeyDown, this);
+    }
+
+    private unbindDebugBoosterKey(): void {
+        cc.systemEvent.off(cc.SystemEvent.EventType.KEY_DOWN, this.handleKeyDown, this);
+    }
+
+    private handleKeyDown(event: cc.Event.EventKeyboard): void {
+        if (event.keyCode !== cc.macro.KEY.a) {
+            return;
+        }
+
+        this.grantBoosters(DEBUG_BOOSTER_GRANT_AMOUNT);
+    }
+
+    private grantBoosters(amount: number): void {
+        const safeAmount = Math.max(0, Math.floor(amount));
+
+        if (safeAmount <= 0) {
+            return;
+        }
+
+        this.bombBoosterAmount += safeAmount;
+        this.teleportBoosterAmount += safeAmount;
+        this.updateBoosterButtons();
+    }
+
     private findLabelByNodeName(root: cc.Node, nodeName: string): cc.Label {
         if (!root) {
             return null;
@@ -425,6 +623,172 @@ export default class GridSpawner extends cc.Component {
         }
 
         return null;
+    }
+
+    private bindBoosterButtons(): void {
+        this.resolveBoosterButtons();
+        this.resolveBoosterLabels();
+        this.unbindBoosterButtons();
+        this.bombBoosterTouchTarget = this.getBoosterTouchTarget(this.bombBoosterButton);
+        this.teleportBoosterTouchTarget = this.getBoosterTouchTarget(this.teleportBoosterButton);
+
+        if (this.bombBoosterTouchTarget) {
+            this.bombBoosterTouchTarget.on(cc.Node.EventType.TOUCH_END, this.handleBombBoosterButton, this);
+        }
+
+        if (this.teleportBoosterTouchTarget) {
+            this.teleportBoosterTouchTarget.on(cc.Node.EventType.TOUCH_END, this.handleTeleportBoosterButton, this);
+        }
+
+        this.updateBoosterButtons();
+    }
+
+    private unbindBoosterButtons(): void {
+        if (this.bombBoosterTouchTarget) {
+            this.bombBoosterTouchTarget.off(cc.Node.EventType.TOUCH_END, this.handleBombBoosterButton, this);
+        }
+
+        if (this.teleportBoosterTouchTarget) {
+            this.teleportBoosterTouchTarget.off(cc.Node.EventType.TOUCH_END, this.handleTeleportBoosterButton, this);
+        }
+
+        this.bombBoosterTouchTarget = null;
+        this.teleportBoosterTouchTarget = null;
+    }
+
+    private handleBombBoosterButton(): void {
+        this.selectBombBooster();
+    }
+
+    private handleTeleportBoosterButton(): void {
+        this.selectTeleportBooster();
+    }
+
+    private resolveBoosterButtons(): void {
+        if (this.bombBoosterButton && this.teleportBoosterButton) {
+            return;
+        }
+
+        const boosterRoot = this.findNodeByName(cc.director.getScene(), BOOSTERS_NODE_NAME);
+
+        if (!boosterRoot) {
+            return;
+        }
+
+        const boosterSlots: cc.Node[] = [];
+        this.findNodesByName(boosterRoot, BOOSTER_SLOT_NODE_NAME, boosterSlots);
+
+        if (!this.bombBoosterButton && boosterSlots.length > 0) {
+            this.bombBoosterButton = boosterSlots[0];
+        }
+
+        if (!this.teleportBoosterButton && boosterSlots.length > 1) {
+            this.teleportBoosterButton = boosterSlots[1];
+        }
+    }
+
+    private resolveBoosterLabels(): void {
+        if (!this.bombBoosterAmountLabel && this.bombBoosterButton) {
+            this.bombBoosterAmountLabel = this.findLabelByNodeName(
+                this.bombBoosterButton,
+                BOOSTER_AMOUNT_LABEL_NODE_NAME,
+            );
+        }
+
+        if (!this.teleportBoosterAmountLabel && this.teleportBoosterButton) {
+            this.teleportBoosterAmountLabel = this.findLabelByNodeName(
+                this.teleportBoosterButton,
+                BOOSTER_AMOUNT_LABEL_NODE_NAME,
+            );
+        }
+    }
+
+    private updateBoosterButtons(): void {
+        this.updateBoosterButton(
+            this.bombBoosterButton,
+            this.selectedBooster === SelectedBooster.Bomb,
+            this.bombBoosterAmount,
+        );
+        this.updateBoosterButton(
+            this.teleportBoosterButton,
+            this.selectedBooster === SelectedBooster.Teleport,
+            this.teleportBoosterAmount,
+        );
+
+        this.updateBoosterAmountLabel(this.bombBoosterAmountLabel, this.bombBoosterAmount);
+        this.updateBoosterAmountLabel(this.teleportBoosterAmountLabel, this.teleportBoosterAmount);
+    }
+
+    private updateBoosterButton(button: cc.Node, selected: boolean, amount: number): void {
+        if (!cc.isValid(button)) {
+            return;
+        }
+
+        const hasAmount = amount > 0;
+        button.setScale(selected && hasAmount ? 1.08 : 1, selected && hasAmount ? 1.08 : 1);
+        button.opacity = hasAmount ? (selected ? 255 : 220) : 120;
+    }
+
+    private updateBoosterAmountLabel(label: cc.Label, amount: number): void {
+        if (!label) {
+            return;
+        }
+
+        label.string = String(Math.max(0, Math.floor(amount)));
+    }
+
+    private getBoosterTouchTarget(node: cc.Node): cc.Node {
+        if (!cc.isValid(node)) {
+            return null;
+        }
+
+        if (node.width > 0 && node.height > 0) {
+            return node;
+        }
+
+        for (let i = 0; i < node.children.length; i++) {
+            const target = this.getBoosterTouchTarget(node.children[i]);
+
+            if (target) {
+                return target;
+            }
+        }
+
+        return node;
+    }
+
+    private findNodeByName(root: cc.Node, nodeName: string): cc.Node {
+        if (!root) {
+            return null;
+        }
+
+        if (root.name === nodeName) {
+            return root;
+        }
+
+        for (let i = 0; i < root.children.length; i++) {
+            const node = this.findNodeByName(root.children[i], nodeName);
+
+            if (node) {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    private findNodesByName(root: cc.Node, nodeName: string, result: cc.Node[]): void {
+        if (!root) {
+            return;
+        }
+
+        if (root.name === nodeName) {
+            result.push(root);
+        }
+
+        for (let i = 0; i < root.children.length; i++) {
+            this.findNodesByName(root.children[i], nodeName, result);
+        }
     }
 
     private createRules(): GridRules {

@@ -1,0 +1,138 @@
+name: Cocos Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COCOS_CREATOR_VERSION: 2.4.15
+  COCOS_CREATOR_CACHE_DIR: ~/.cache/cocos-creator/2.4.15
+  COCOS_CREATOR_APP: ~/.cache/cocos-creator/2.4.15/CocosCreator.app
+  COCOS_BUILD_PARAMS: platform=web-mobile;buildPath=build;debug=false;embedWebDebugger=false;webOrientation=portrait
+
+jobs:
+  build:
+    name: Build web-mobile
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Cocos Creator cache
+        id: cocos-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COCOS_CREATOR_CACHE_DIR }}/CocosCreator.app
+          key: macos-cocos-creator-${{ env.COCOS_CREATOR_VERSION }}
+
+      - name: Install Cocos Creator
+        if: steps.cocos-cache.outputs.cache-hit != 'true'
+        env:
+          COCOS_CREATOR_MAC_DMG_URL: ${{ secrets.COCOS_CREATOR_MAC_DMG_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${COCOS_CREATOR_MAC_DMG_URL}" ]; then
+            echo "::error::Missing COCOS_CREATOR_MAC_DMG_URL secret with a direct Cocos Creator 2.4.15 macOS DMG/ZIP URL."
+            exit 1
+          fi
+
+          install_dir="${HOME}/.cache/cocos-creator/${COCOS_CREATOR_VERSION}"
+          package_path="${RUNNER_TEMP}/cocos-creator"
+          mount_dir="${RUNNER_TEMP}/cocos-creator-mount"
+          rm -rf "${install_dir}" "${package_path}" "${mount_dir}"
+          mkdir -p "${install_dir}" "${mount_dir}"
+
+          curl --fail --location --retry 3 --output "${package_path}" "${COCOS_CREATOR_MAC_DMG_URL}"
+
+          if file "${package_path}" | grep -q "Zip archive"; then
+            unzip -q "${package_path}" -d "${RUNNER_TEMP}/cocos-creator-unpacked"
+            app_path="$(find "${RUNNER_TEMP}/cocos-creator-unpacked" -maxdepth 4 -name 'CocosCreator.app' -print -quit)"
+          else
+            hdiutil attach "${package_path}" -mountpoint "${mount_dir}" -nobrowse -quiet
+            trap 'hdiutil detach "${mount_dir}" -quiet || true' EXIT
+            app_path="$(find "${mount_dir}" -maxdepth 4 -name 'CocosCreator.app' -print -quit)"
+          fi
+
+          if [ -z "${app_path}" ]; then
+            echo "::error::CocosCreator.app was not found in the downloaded package."
+            exit 1
+          fi
+
+          ditto "${app_path}" "${install_dir}/CocosCreator.app"
+          xattr -dr com.apple.quarantine "${install_dir}/CocosCreator.app" || true
+
+      - name: Verify Cocos Creator
+        run: |
+          set -euo pipefail
+
+          creator_bin="${HOME}/.cache/cocos-creator/${COCOS_CREATOR_VERSION}/CocosCreator.app/Contents/MacOS/CocosCreator"
+
+          if [ ! -x "${creator_bin}" ]; then
+            echo "::error::Cocos Creator executable was not found at ${creator_bin}."
+            exit 1
+          fi
+
+          echo "COCOS_CREATOR_BIN=${creator_bin}" >> "${GITHUB_ENV}"
+
+      - name: Build web-mobile
+        run: |
+          set -euo pipefail
+
+          rm -rf build
+          "${COCOS_CREATOR_BIN}" \
+            --path "${GITHUB_WORKSPACE}" \
+            --build "${COCOS_BUILD_PARAMS}"
+
+          if [ ! -d "build/web-mobile" ]; then
+            echo "::error::Expected build output directory build/web-mobile was not created."
+            ls -la build || true
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-mobile
+          path: build/web-mobile
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web-mobile
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

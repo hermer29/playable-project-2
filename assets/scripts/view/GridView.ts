@@ -12,6 +12,8 @@ import {
 import BlockPrefabRegistry from './BlockPrefabRegistry';
 import BlockView, { BlockClickHandler } from './BlockView';
 
+type GridAnimationTask = () => Promise<void>;
+
 export interface GridViewConfig {
     rows: number;
     columns: number;
@@ -32,6 +34,7 @@ export default class GridView {
     private readonly onBlockClick: BlockClickHandler;
     private readonly nodesByBlockId: { [blockId: string]: cc.Node } = {};
     private inputEnabled = true;
+    private selectedTileNode: cc.Node = null;
 
     public constructor(config: GridViewConfig) {
         this.rows = config.rows;
@@ -44,6 +47,8 @@ export default class GridView {
     }
 
     public clear(): void {
+        this.setSelectedTile(null);
+
         const ids = Object.keys(this.nodesByBlockId);
 
         for (let i = 0; i < ids.length; i++) {
@@ -59,6 +64,29 @@ export default class GridView {
 
     public setInputEnabled(enabled: boolean): void {
         this.inputEnabled = enabled;
+    }
+
+    public setSelectedTile(position: GridPosition): void {
+        if (cc.isValid(this.selectedTileNode)) {
+            this.selectedTileNode.setScale(1, 1);
+            this.selectedTileNode.opacity = 255;
+        }
+
+        this.selectedTileNode = null;
+
+        if (!position) {
+            return;
+        }
+
+        const node = this.findNodeAtPosition(position);
+
+        if (!cc.isValid(node)) {
+            return;
+        }
+
+        this.selectedTileNode = node;
+        node.setScale(1.12, 1.12);
+        node.opacity = 230;
     }
 
     public animateVictoryScatter(): Promise<void> {
@@ -102,8 +130,10 @@ export default class GridView {
             const spin = (i % 2 === 0 ? 1 : -1) * (180 + (i % 4) * 45);
             const delay = (i % 9) * 0.025;
 
-            animations.push(new Promise<void>((resolve) => {
-                cc.tween(node)
+            animations.push(this.runNodeTween(
+                node,
+                delay + 0.67,
+                (tween, resolve) => tween
                     .delay(delay)
                     .to(0.12, { scale: 1.18 }, { easing: 'quadOut' })
                     .to(0.55, {
@@ -112,9 +142,8 @@ export default class GridView {
                         scale: 0.1,
                         opacity: 0,
                     }, { easing: 'quadIn' })
-                    .call(resolve)
-                    .start();
-            }));
+                    .call(resolve),
+            ));
         }
 
         return Promise.all(animations).then(() => undefined);
@@ -122,7 +151,7 @@ export default class GridView {
 
     public applyActions(actions: GridAction[]): Promise<void> {
         let sequence: Promise<void> = Promise.resolve();
-        let batch: Array<Promise<void>> = [];
+        let batch: GridAnimationTask[] = [];
         let batchType: GridActionType = null;
 
         const flushBatch = () => {
@@ -133,10 +162,10 @@ export default class GridView {
             const currentBatch = batch;
             batch = [];
             batchType = null;
-            sequence = sequence.then(() => Promise.all(currentBatch).then(() => undefined));
+            sequence = sequence.then(() => Promise.all(currentBatch.map((task) => task())).then(() => undefined));
         };
 
-        const pushBatched = (type: GridActionType, animation: Promise<void>) => {
+        const pushBatched = (type: GridActionType, animation: GridAnimationTask) => {
             if (batchType && batchType !== type) {
                 flushBatch();
             }
@@ -150,15 +179,15 @@ export default class GridView {
 
             switch (action.type) {
                 case GridActionType.Remove:
-                    pushBatched(GridActionType.Remove, this.animateRemove(action));
+                    pushBatched(GridActionType.Remove, () => this.animateRemove(action));
                     break;
 
                 case GridActionType.Move:
-                    pushBatched(GridActionType.Move, this.animateMove(action));
+                    pushBatched(GridActionType.Move, () => this.animateMove(action));
                     break;
 
                 case GridActionType.Spawn:
-                    pushBatched(GridActionType.Spawn, this.animateSpawn(action));
+                    pushBatched(GridActionType.Spawn, () => this.animateSpawn(action));
                     break;
 
                 case GridActionType.CreateSuperTile:
@@ -196,8 +225,10 @@ export default class GridView {
 
         delete this.nodesByBlockId[action.block.id];
 
-        return new Promise<void>((resolve) => {
-            cc.tween(node)
+        return this.runNodeTween(
+            node,
+            0.12,
+            (tween, resolve) => tween
                 .to(0.12, { opacity: 0, scale: 0.15 }, { easing: 'quadIn' })
                 .call(() => {
                     if (cc.isValid(node)) {
@@ -205,9 +236,13 @@ export default class GridView {
                     }
 
                     resolve();
-                })
-                .start();
-        });
+                }),
+            () => {
+                if (cc.isValid(node)) {
+                    node.destroy();
+                }
+            },
+        );
     }
 
     private animateMove(action: MoveGridAction): Promise<void> {
@@ -219,12 +254,13 @@ export default class GridView {
 
         this.updateBlockView(node, action.block.id, action.to);
 
-        return new Promise<void>((resolve) => {
-            cc.tween(node)
+        return this.runNodeTween(
+            node,
+            0.18,
+            (tween, resolve) => tween
                 .to(0.18, { position: this.positionToLocal(action.to) }, { easing: 'quadOut' })
-                .call(resolve)
-                .start();
-        });
+                .call(resolve),
+        );
     }
 
     private animateSpawn(action: SpawnGridAction): Promise<void> {
@@ -236,12 +272,13 @@ export default class GridView {
 
         this.updateBlockView(node, action.block.id, action.to);
 
-        return new Promise<void>((resolve) => {
-            cc.tween(node)
+        return this.runNodeTween(
+            node,
+            0.22,
+            (tween, resolve) => tween
                 .to(0.22, { position: this.positionToLocal(action.to) }, { easing: 'quadOut' })
-                .call(resolve)
-                .start();
-        });
+                .call(resolve),
+        );
     }
 
     private animateShuffle(action: ShuffleGridAction): Promise<void> {
@@ -292,6 +329,68 @@ export default class GridView {
         this.updateBlockView(node, block.id, block.position);
 
         return node;
+    }
+
+    private findNodeAtPosition(position: GridPosition): cc.Node {
+        const ids = Object.keys(this.nodesByBlockId);
+
+        for (let i = 0; i < ids.length; i++) {
+            const node = this.nodesByBlockId[ids[i]];
+
+            if (!cc.isValid(node)) {
+                continue;
+            }
+
+            const blockView = node.getComponent(BlockView);
+
+            if (blockView
+                && blockView.position.row === position.row
+                && blockView.position.column === position.column) {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    private runNodeTween(
+        node: cc.Node,
+        expectedDuration: number,
+        configure: (tween: cc.Tween<cc.Node>, resolve: () => void) => cc.Tween<cc.Node>,
+        fallback?: () => void,
+    ): Promise<void> {
+        if (!cc.isValid(node)) {
+            return Promise.resolve();
+        }
+
+        return new Promise<void>((resolve, reject) => {
+            let isResolved = false;
+            let timeoutId = 0;
+            const resolveOnce = () => {
+                if (isResolved) {
+                    return;
+                }
+
+                isResolved = true;
+                clearTimeout(timeoutId);
+                resolve();
+            };
+
+            timeoutId = setTimeout(() => {
+                if (fallback) {
+                    fallback();
+                }
+
+                resolveOnce();
+            }, Math.ceil((expectedDuration + 0.5) * 1000));
+
+            try {
+                configure(cc.tween(node), resolveOnce).start();
+            } catch (error) {
+                clearTimeout(timeoutId);
+                reject(error);
+            }
+        });
     }
 
     private updateBlockView(node: cc.Node, blockId: number, position: GridPosition): void {

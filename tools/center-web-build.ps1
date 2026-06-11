@@ -31,6 +31,9 @@ $htmlStartMarker
   body {
     padding: 0 !important;
     border: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 
   #Cocos2dGameContainer {
@@ -41,15 +44,17 @@ $htmlStartMarker
     height: 100vh !important;
     margin: 0 !important;
     overflow: hidden !important;
-    display: block !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 
   #GameCanvas {
     display: block !important;
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100vw !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: calc(100vh * 16 / 9) !important;
     height: 100vh !important;
     margin: 0 !important;
     transform: none !important;
@@ -79,6 +84,9 @@ body {
 body {
   padding: 0 !important;
   border: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 #Cocos2dGameContainer {
@@ -89,15 +97,17 @@ body {
   height: 100vh !important;
   margin: 0 !important;
   overflow: hidden !important;
-  display: block !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 #GameCanvas {
   display: block !important;
-  position: fixed !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 100vw !important;
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  width: calc(100vh * 16 / 9) !important;
   height: 100vh !important;
   margin: 0 !important;
   transform: none !important;

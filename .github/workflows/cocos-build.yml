@@ -21,7 +21,6 @@ concurrency:
 env:
   COCOS_CREATOR_VERSION: 2.4.15
   COCOS_CREATOR_CACHE_DIR: ~/.cache/cocos-creator/2.4.15
-  COCOS_BUILD_PARAMS: "platform=web-mobile;buildPath=build;debug=false;embedWebDebugger=false;webOrientation=portrait"
 
 jobs:
   build:
@@ -81,13 +80,59 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE "build"
+          $buildDirForCocos = $buildDir.Replace("\", "/")
+          $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;dest=$buildDirForCocos;debug=false;embedWebDebugger=false;webOrientation=portrait"
+          $stdoutLog = Join-Path $env:RUNNER_TEMP "cocos-build.stdout.log"
+          $stderrLog = Join-Path $env:RUNNER_TEMP "cocos-build.stderr.log"
 
-          & $env:COCOS_CREATOR_EXE `
-            --path $env:GITHUB_WORKSPACE `
-            --build $env:COCOS_BUILD_PARAMS
+          Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
 
-          if (-not (Test-Path "build/web-mobile")) {
+          Write-Host "Cocos Creator: $env:COCOS_CREATOR_EXE"
+          Write-Host "Project path: $env:GITHUB_WORKSPACE"
+          Write-Host "Build params: $buildParams"
+
+          $arguments = @("--path", $env:GITHUB_WORKSPACE, "--build", $buildParams)
+          $process = Start-Process `
+            -FilePath $env:COCOS_CREATOR_EXE `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru `
+            -NoNewWindow `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog
+
+          if (Test-Path $stdoutLog) {
+            Get-Content $stdoutLog
+          }
+
+          if (Test-Path $stderrLog) {
+            Get-Content $stderrLog
+          }
+
+          if ($process.ExitCode -ne 0) {
+            Write-Error "Cocos Creator exited with code $($process.ExitCode)."
+          }
+
+          $outputDir = Join-Path $buildDir "web-mobile"
+          $deadline = (Get-Date).AddMinutes(10)
+          while (-not (Test-Path $outputDir) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 5
+          }
+
+          if (-not (Test-Path $outputDir)) {
+            if (Test-Path $buildDir) {
+              Get-ChildItem -Path $buildDir -Recurse -Depth 3 | Select-Object FullName
+            }
+
+            $creatorLogs = Join-Path $env:USERPROFILE ".CocosCreator\logs"
+            if (Test-Path $creatorLogs) {
+              Get-ChildItem -Path $creatorLogs -File | Sort-Object LastWriteTime -Descending | Select-Object -First 3 | ForEach-Object {
+                Write-Host "===== $($_.FullName) ====="
+                Get-Content $_.FullName -Tail 200
+              }
+            }
+
             Write-Error "Expected build output directory build/web-mobile was not created."
           }
 

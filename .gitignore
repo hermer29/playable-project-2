@@ -1,0 +1,49 @@
+# Cocos Creator generated folders
+/library/
+/temp/
+/local/
+/build/
+/native/
+
+# Dependencies
+/node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Crash dumps and databases
+*.pid
+*.seed
+*.pid.lock
+*.sql
+*.sqlite
+*.sqlite3
+
+# TypeScript / JavaScript build cache
+*.tsbuildinfo
+
+# IDE and editor files
+/.vscode/
+/.idea/
+*.suo
+*.sln
+*.csproj
+*.pidb
+*.unityproj
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Archives and temporary files
+*.tmp
+*.temp
+*.bak
+*.zip
+*.rar

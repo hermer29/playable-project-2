@@ -21,13 +21,12 @@ concurrency:
 env:
   COCOS_CREATOR_VERSION: 2.4.15
   COCOS_CREATOR_CACHE_DIR: ~/.cache/cocos-creator/2.4.15
-  COCOS_CREATOR_APP: ~/.cache/cocos-creator/2.4.15/CocosCreator.app
-  COCOS_BUILD_PARAMS: platform=web-mobile;buildPath=build;debug=false;embedWebDebugger=false;webOrientation=portrait
+  COCOS_BUILD_PARAMS: "platform=web-mobile;buildPath=build;debug=false;embedWebDebugger=false;webOrientation=portrait"
 
 jobs:
   build:
     name: Build web-mobile
-    runs-on: macos-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -37,73 +36,60 @@ jobs:
         id: cocos-cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.COCOS_CREATOR_CACHE_DIR }}/CocosCreator.app
-          key: macos-cocos-creator-${{ env.COCOS_CREATOR_VERSION }}
+          path: ${{ env.COCOS_CREATOR_CACHE_DIR }}
+          key: windows-cocos-creator-${{ env.COCOS_CREATOR_VERSION }}
 
       - name: Install Cocos Creator
         if: steps.cocos-cache.outputs.cache-hit != 'true'
         env:
-          COCOS_CREATOR_MAC_DMG_URL: ${{ secrets.COCOS_CREATOR_MAC_DMG_URL }}
+          COCOS_CREATOR_WIN_ZIP_URL: ${{ secrets.COCOS_CREATOR_WIN_ZIP_URL }}
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
-          if [ -z "${COCOS_CREATOR_MAC_DMG_URL}" ]; then
-            echo "::error::Missing COCOS_CREATOR_MAC_DMG_URL secret with a direct Cocos Creator 2.4.15 macOS DMG/ZIP URL."
-            exit 1
-          fi
+          if ([string]::IsNullOrWhiteSpace($env:COCOS_CREATOR_WIN_ZIP_URL)) {
+            Write-Error "Missing COCOS_CREATOR_WIN_ZIP_URL secret with a direct ZIP URL that contains CocosCreator.exe."
+          }
 
-          install_dir="${HOME}/.cache/cocos-creator/${COCOS_CREATOR_VERSION}"
-          package_path="${RUNNER_TEMP}/cocos-creator"
-          mount_dir="${RUNNER_TEMP}/cocos-creator-mount"
-          rm -rf "${install_dir}" "${package_path}" "${mount_dir}"
-          mkdir -p "${install_dir}" "${mount_dir}"
+          $installDir = Join-Path $env:USERPROFILE ".cache\cocos-creator\$env:COCOS_CREATOR_VERSION"
+          $archivePath = Join-Path $env:RUNNER_TEMP "cocos-creator.zip"
+          Remove-Item -Recurse -Force $installDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-          curl --fail --location --retry 3 --output "${package_path}" "${COCOS_CREATOR_MAC_DMG_URL}"
+          Invoke-WebRequest -Uri $env:COCOS_CREATOR_WIN_ZIP_URL -OutFile $archivePath
+          Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
 
-          if file "${package_path}" | grep -q "Zip archive"; then
-            unzip -q "${package_path}" -d "${RUNNER_TEMP}/cocos-creator-unpacked"
-            app_path="$(find "${RUNNER_TEMP}/cocos-creator-unpacked" -maxdepth 4 -name 'CocosCreator.app' -print -quit)"
-          else
-            hdiutil attach "${package_path}" -mountpoint "${mount_dir}" -nobrowse -quiet
-            trap 'hdiutil detach "${mount_dir}" -quiet || true' EXIT
-            app_path="$(find "${mount_dir}" -maxdepth 4 -name 'CocosCreator.app' -print -quit)"
-          fi
-
-          if [ -z "${app_path}" ]; then
-            echo "::error::CocosCreator.app was not found in the downloaded package."
-            exit 1
-          fi
-
-          ditto "${app_path}" "${install_dir}/CocosCreator.app"
-          xattr -dr com.apple.quarantine "${install_dir}/CocosCreator.app" || true
+          $creator = Get-ChildItem -Path $installDir -Filter "CocosCreator.exe" -Recurse | Select-Object -First 1
+          if (-not $creator) {
+            Write-Error "CocosCreator.exe was not found in the downloaded ZIP."
+          }
 
       - name: Verify Cocos Creator
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
+          $installDir = Join-Path $env:USERPROFILE ".cache\cocos-creator\$env:COCOS_CREATOR_VERSION"
+          $creator = Get-ChildItem -Path $installDir -Filter "CocosCreator.exe" -Recurse | Select-Object -First 1
 
-          creator_bin="${HOME}/.cache/cocos-creator/${COCOS_CREATOR_VERSION}/CocosCreator.app/Contents/MacOS/CocosCreator"
+          if (-not $creator) {
+            Write-Error "CocosCreator.exe was not found in $installDir."
+          }
 
-          if [ ! -x "${creator_bin}" ]; then
-            echo "::error::Cocos Creator executable was not found at ${creator_bin}."
-            exit 1
-          fi
-
-          echo "COCOS_CREATOR_BIN=${creator_bin}" >> "${GITHUB_ENV}"
+          "COCOS_CREATOR_EXE=$($creator.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build web-mobile
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
+          Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
 
-          rm -rf build
-          "${COCOS_CREATOR_BIN}" \
-            --path "${GITHUB_WORKSPACE}" \
-            --build "${COCOS_BUILD_PARAMS}"
+          & $env:COCOS_CREATOR_EXE `
+            --path $env:GITHUB_WORKSPACE `
+            --build $env:COCOS_BUILD_PARAMS
 
-          if [ ! -d "build/web-mobile" ]; then
-            echo "::error::Expected build output directory build/web-mobile was not created."
-            ls -la build || true
-            exit 1
-          fi
+          if (-not (Test-Path "build/web-mobile")) {
+            Write-Error "Expected build output directory build/web-mobile was not created."
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

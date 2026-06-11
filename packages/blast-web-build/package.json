@@ -1,0 +1,7 @@
+{
+  "name": "blast-web-build",
+  "version": "1.0.0",
+  "description": "Post-process web-mobile builds for Blast.",
+  "author": "Blast",
+  "main": "main.js"
+}

@@ -151,10 +151,6 @@ jobs:
             Write-Error "Expected build output file build/web-mobile/index.html was not created."
           }
 
-      - name: Center web build canvas
-        shell: pwsh
-        run: ./tools/center-web-build.ps1 -BuildDir build/web-mobile
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

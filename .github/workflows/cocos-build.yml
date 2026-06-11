@@ -82,7 +82,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $buildDir = Join-Path $env:GITHUB_WORKSPACE "build"
           $buildDirForCocos = $buildDir.Replace("\", "/")
-          $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;dest=$buildDirForCocos;debug=false;embedWebDebugger=false;webOrientation=portrait"
+          $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;dest=$buildDirForCocos;debug=false;md5Cache=false;embedWebDebugger=false;webOrientation=portrait"
           $stdoutLog = Join-Path $env:RUNNER_TEMP "cocos-build.stdout.log"
           $stderrLog = Join-Path $env:RUNNER_TEMP "cocos-build.stderr.log"
 

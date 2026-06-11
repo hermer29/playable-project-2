@@ -223,6 +223,34 @@ function removeMarkedBlock(content, startMarker, endMarker) {
   return content.replace(pattern, '\n');
 }
 
+function resolveBuildDir(options) {
+  const candidates = [];
+
+  if (options && options.dest) {
+    candidates.push(options.dest);
+    candidates.push(path.join(options.dest, 'web-mobile'));
+  }
+
+  if (options && options.buildPath) {
+    candidates.push(path.join(options.buildPath, 'web-mobile'));
+    candidates.push(options.buildPath);
+  }
+
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+
+    seen.add(candidate);
+    if (fs.existsSync(path.join(candidate, 'index.html'))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`index.html was not found. Checked: ${Array.from(seen).join(', ')}`);
+}
+
 function patchIndexHtml(buildDir) {
   const indexPath = path.join(buildDir, 'index.html');
 
@@ -290,28 +318,30 @@ function patchMainScripts(buildDir) {
 }
 
 function patchWebBuild(options, callback) {
-  try {
-    if (!options || options.platform !== 'web-mobile') {
-      callback();
-      return;
-    }
+  if (!options || options.platform !== 'web-mobile') {
+    callback();
+    return;
+  }
 
-    patchIndexHtml(options.dest);
-    patchCssFiles(options.dest);
-    patchMainScripts(options.dest);
+  try {
+    const buildDir = resolveBuildDir(options);
+    Editor.log(`[blast-web-build] Patching ${buildDir}`);
+    patchIndexHtml(buildDir);
+    patchCssFiles(buildDir);
+    patchMainScripts(buildDir);
     callback();
   } catch (error) {
     Editor.error(`[blast-web-build] ${error.stack || error.message || error}`);
-    callback(error);
+    callback();
   }
 }
 
 module.exports = {
   load() {
-    Editor.Builder.on('before-change-files', patchWebBuild);
+    Editor.Builder.on('build-finished', patchWebBuild);
   },
 
   unload() {
-    Editor.Builder.removeListener('before-change-files', patchWebBuild);
+    Editor.Builder.removeListener('build-finished', patchWebBuild);
   },
 };

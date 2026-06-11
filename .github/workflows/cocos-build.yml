@@ -82,7 +82,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $buildDir = Join-Path $env:GITHUB_WORKSPACE "build"
           $buildDirForCocos = $buildDir.Replace("\", "/")
-          $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;dest=$buildDirForCocos;debug=false;md5Cache=false;embedWebDebugger=false;webOrientation=portrait"
+          $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;debug=false;md5Cache=false;embedWebDebugger=false;webOrientation=portrait"
 
           Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
 
@@ -118,7 +118,7 @@ jobs:
                 $lastWriteStamp = $latestWrite
                 $stableSince = Get-Date
                 Write-Host "Build output is being written. Latest change: $latestWrite"
-              } elseif ($stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge 30) {
+              } elseif ($stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge 30 -and (Test-Path $indexPath)) {
                 Write-Host "Build output is stable. Continuing."
                 break
               }
@@ -150,6 +150,12 @@ jobs:
 
             Write-Error "Expected build output file build/web-mobile/index.html was not created."
           }
+
+      - name: Post-process web-mobile build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "${{ github.workspace }}/tools/center-web-build.ps1" -BuildDir "${{ github.workspace }}/build/web-mobile"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

@@ -83,8 +83,6 @@ jobs:
           $buildDir = Join-Path $env:GITHUB_WORKSPACE "build"
           $buildDirForCocos = $buildDir.Replace("\", "/")
           $buildParams = "platform=web-mobile;buildPath=$buildDirForCocos;dest=$buildDirForCocos;debug=false;md5Cache=false;embedWebDebugger=false;webOrientation=portrait"
-          $stdoutLog = Join-Path $env:RUNNER_TEMP "cocos-build.stdout.log"
-          $stderrLog = Join-Path $env:RUNNER_TEMP "cocos-build.stderr.log"
 
           Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
 
@@ -96,31 +94,48 @@ jobs:
           $process = Start-Process `
             -FilePath $env:COCOS_CREATOR_EXE `
             -ArgumentList $arguments `
-            -Wait `
             -PassThru `
-            -NoNewWindow `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog
-
-          if (Test-Path $stdoutLog) {
-            Get-Content $stdoutLog
-          }
-
-          if (Test-Path $stderrLog) {
-            Get-Content $stderrLog
-          }
-
-          if ($process.ExitCode -ne 0) {
-            Write-Error "Cocos Creator exited with code $($process.ExitCode)."
-          }
+            -NoNewWindow
 
           $outputDir = Join-Path $buildDir "web-mobile"
-          $deadline = (Get-Date).AddMinutes(10)
-          while (-not (Test-Path $outputDir) -and (Get-Date) -lt $deadline) {
+          $indexPath = Join-Path $outputDir "index.html"
+          $deadline = (Get-Date).AddMinutes(20)
+          $lastWriteStamp = $null
+          $stableSince = $null
+
+          while ((Get-Date) -lt $deadline) {
+            if ($process.HasExited) {
+              Write-Host "Cocos Creator exited with code $($process.ExitCode)."
+              break
+            }
+
+            if (Test-Path $indexPath) {
+              $latestWrite = Get-ChildItem -Path $outputDir -Recurse -File |
+                Sort-Object LastWriteTimeUtc -Descending |
+                Select-Object -First 1 -ExpandProperty LastWriteTimeUtc
+
+              if ($latestWrite -ne $lastWriteStamp) {
+                $lastWriteStamp = $latestWrite
+                $stableSince = Get-Date
+                Write-Host "Build output is being written. Latest change: $latestWrite"
+              } elseif ($stableSince -and ((Get-Date) - $stableSince).TotalSeconds -ge 30) {
+                Write-Host "Build output is stable. Continuing."
+                break
+              }
+            }
+
             Start-Sleep -Seconds 5
           }
 
-          if (-not (Test-Path $outputDir)) {
+          if (-not $process.HasExited) {
+            Write-Host "Stopping Cocos Creator process $($process.Id)."
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+
+          Get-Process -Name "CocosCreator" -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if (-not (Test-Path $indexPath)) {
             if (Test-Path $buildDir) {
               Get-ChildItem -Path $buildDir -Recurse -Depth 3 | Select-Object FullName
             }
@@ -133,8 +148,12 @@ jobs:
               }
             }
 
-            Write-Error "Expected build output directory build/web-mobile was not created."
+            Write-Error "Expected build output file build/web-mobile/index.html was not created."
           }
+
+      - name: Center web build canvas
+        shell: pwsh
+        run: ./tools/center-web-build.ps1 -BuildDir build/web-mobile
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

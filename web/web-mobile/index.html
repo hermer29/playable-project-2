@@ -82,6 +82,51 @@
       transform: translate(-50%, -50%);
     }
   </style>
+<!-- blast-centering:start -->
+<style>
+  html,
+  body {
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    background: #000 !important;
+  }
+
+  body {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #Cocos2dGameContainer {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    display: block !important;
+  }
+
+  #GameCanvas {
+    display: block !important;
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important;
+    margin: 0 !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  #splash {
+    position: fixed !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+  }
+</style>
+<!-- blast-centering:end -->
 </head>
 <body>
   <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
@@ -91,9 +136,9 @@
     </div>
   </div>
 
-<script src="src/settings.2565c.js" charset="utf-8"></script>
+<script src="src/settings.4942c.js" charset="utf-8"></script>
 
-<script src="main.26eb4.js" charset="utf-8"></script>
+<script src="main.3e7c4.js" charset="utf-8"></script>
 
 <script type="text/javascript">
 (function () {

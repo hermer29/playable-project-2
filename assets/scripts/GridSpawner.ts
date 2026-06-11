@@ -917,6 +917,8 @@ export default class GridSpawner extends cc.Component {
             gizmoNode.parent = this.node;
         }
 
+        this.node.zIndex = cc.macro.MAX_ZINDEX - 1;
+        gizmoNode.zIndex = cc.macro.MAX_ZINDEX;
         gizmoNode.setPosition(0, 0);
         gizmoNode.setScale(1, 1);
         gizmoNode.angle = 0;

@@ -56,18 +56,23 @@
     }
 
     #Cocos2dGameContainer {
-      position: relative !important;
-      left: auto !important;
-      top: auto !important;
-      margin: auto !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
+      position: fixed !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      display: block !important;
     }
 
     #GameCanvas {
       display: block !important;
-      margin: auto !important;
+      position: absolute !important;
+      left: 50% !important;
+      top: 50% !important;
+      margin: 0 !important;
+      transform: translate(-50%, -50%) !important;
     }
 
     #splash {

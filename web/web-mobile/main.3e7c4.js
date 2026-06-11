@@ -21,13 +21,19 @@ window.boot = function () {
 
         cc.director.once(cc.Director.EVENT_AFTER_SCENE_LAUNCH, function () {
             splash.style.display = 'none';
+            if (window.__applyBlastCanvasSize) {
+                window.__applyBlastCanvasSize();
+            }
         });
     }
 
     var onStart = function () {
 
         cc.view.enableRetina(true);
-        cc.view.resizeWithBrowserSize(true);
+        cc.view.resizeWithBrowserSize(false);
+        if (window.__applyBlastCanvasSize) {
+            window.__applyBlastCanvasSize();
+        }
 
         if (cc.sys.isBrowser) {
             setLoadingDisplay();

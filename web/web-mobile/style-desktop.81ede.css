@@ -133,17 +133,30 @@ body {
   justify-content: center !important;
 }
 
-#Cocos2dGameContainer {
+#Cocos2dGameContainer.blast-pillarbox {
   position: fixed !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 100vw !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: min(calc(100vh * 9 / 16), 100vw) !important;
   height: 100vh !important;
   margin: 0 !important;
   overflow: hidden !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+#Cocos2dGameContainer.blast-fullscreen {
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  display: block !important;
+  transform: none !important;
 }
 
 #GameCanvas {
@@ -151,8 +164,6 @@ body {
   position: relative !important;
   left: auto !important;
   top: auto !important;
-  width: calc(100vh * 16 / 9) !important;
-  height: 100vh !important;
   margin: 0 !important;
   transform: none !important;
 }
@@ -162,5 +173,13 @@ body {
   left: 50% !important;
   top: 50% !important;
   transform: translate(-50%, -50%) !important;
+}
+
+body.blast-fullscreen-active #splash {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
 }
 /* blast-centering:end */

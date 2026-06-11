@@ -20,9 +20,8 @@ const htmlStyle = `${HTML_START_MARKER}
   }
 
   body {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    padding: 0 !important;
+    border: 0 !important;
   }
 
   #Cocos2dGameContainer {
@@ -38,11 +37,13 @@ const htmlStyle = `${HTML_START_MARKER}
 
   #GameCanvas {
     display: block !important;
-    position: absolute !important;
-    left: 50% !important;
-    top: 50% !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
     margin: 0 !important;
-    transform: translate(-50%, -50%) !important;
+    transform: none !important;
   }
 
   #splash {
@@ -65,9 +66,8 @@ body {
 }
 
 body {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 #Cocos2dGameContainer {
@@ -83,11 +83,13 @@ body {
 
 #GameCanvas {
   display: block !important;
-  position: absolute !important;
-  left: 50% !important;
-  top: 50% !important;
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
   margin: 0 !important;
-  transform: translate(-50%, -50%) !important;
+  transform: none !important;
 }
 
 #splash {
